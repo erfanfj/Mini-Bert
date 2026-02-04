@@ -93,11 +93,20 @@ class MiniBERT(nn.Module):
                 config.hidden_size,
                 config.num_heads,
                 config.ffn_hidden
-            ) for _ in range(config.num_layers)
+            )
+            for _ in range(config.num_layers)
         ])
 
-    def forward(self, input_ids, mask=None):
+        self.mlm_head = nn.Linear(
+            config.hidden_size,
+            config.vocab_size
+        )
+
+    def forward(self, input_ids, attention_mask=None):
         x = self.embeddings(input_ids)
+
         for layer in self.layers:
-            x = layer(x, mask)
-        return x
+            x = layer(x, attention_mask)
+
+        logits = self.mlm_head(x)   
+        return logits

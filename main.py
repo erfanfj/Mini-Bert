@@ -1,31 +1,25 @@
 from torch.utils.data import DataLoader
-from utils.mlm_dataset import MLMDataset ,load_txt_files
+from utils.mlm_dataset import MLMDataset 
 from utils.tokenizer import Tokenizer
+import glob
 
-texts = load_txt_files("data")
+files = glob.glob("data/Persian-WikiText-*.txt")
 
 tokenizer = Tokenizer(vocab_size=30000)
-tokenizer.build_vocab(texts)
-print("-------------------")
+
+with open(files[0], encoding="utf-8") as f:
+    tokenizer.build_vocab([f.read()[:500_000]])
 
 dataset = MLMDataset(
-    texts=texts,
+    file_paths=files,
     tokenizer=tokenizer,
     max_len=128
 )
-print("-------------------")
 
-
-loader = DataLoader(
-    dataset,
-    batch_size=16,
-    shuffle=True
-)
-print("-------------------")
+loader = DataLoader(dataset, batch_size=16, shuffle=True)
 
 
 batch = next(iter(loader))
-
 print(batch["input_ids"].shape)
 print(batch["labels"].shape)
 print(batch["attention_mask"].shape)

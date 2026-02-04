@@ -4,35 +4,58 @@ from torch.utils.data import Dataset
 import os
 from .tokenizer import tokenize
 
-def load_txt_files(data_dir):
-    texts = []
-
-    for file in os.listdir(data_dir):
-        if file.endswith(".txt"):
-            path = os.path.join(data_dir, file)
-            with open(path, "r", encoding="utf-8") as f:
-                texts.append(f.read())
-
-    return texts
-
+def read_in_chunks(file, chunk_size=10000):
+    chunk = []
+    for line in file:
+        chunk.append(line)
+        if len(chunk) == chunk_size:
+            yield ''.join(chunk)
+            chunk = []
+    if chunk:
+        yield ''.join(chunk)
 class MLMDataset(Dataset):
-    def __init__(self, texts, tokenizer, max_len=128, mlm_prob=0.15):
+    def __init__(
+        self,
+        file_paths,
+        tokenizer,
+        max_len=128,
+        mlm_prob=0.15,
+        chunk_size=10000,
+        min_tokens=5
+    ):
+        """
+        file_paths: لیست مسیر فایل‌های txt
+        tokenizer: tokenizer سفارشی شما
+        max_len: طول ورودی BERT
+        mlm_prob: احتمال mask شدن هر توکن
+        chunk_size: تعداد line در هر chunk
+        min_tokens: حداقل طول یک sample
+        """
         self.tokenizer = tokenizer
         self.max_len = max_len
         self.mlm_prob = mlm_prob
-
         self.samples = []
-        self._build_samples(texts)
 
-    def _build_samples(self, texts):
-        for text in texts:
-            tokens = tokenize(text)
+        self._build_samples(
+            file_paths=file_paths,
+            chunk_size=chunk_size,
+            min_tokens=min_tokens
+        )
 
-            for i in range(0, len(tokens), self.max_len - 2):
-                chunk = tokens[i:i + self.max_len - 2]
-                if len(chunk) < 5:
-                    continue
-                self.samples.append(chunk)
+    def _build_samples(self, file_paths, chunk_size, min_tokens):
+        for path in file_paths:
+            with open(path, "r", encoding="utf-8") as f:
+                for text_chunk in read_in_chunks(f, chunk_size):
+                    tokens = tokenize(text_chunk)
+
+                    # تبدیل به sequenceهای با طول ثابت
+                    for i in range(0, len(tokens), self.max_len - 2):
+                        chunk = tokens[i:i + self.max_len - 2]
+
+                        if len(chunk) < min_tokens:
+                            continue
+
+                        self.samples.append(chunk)
 
     def __len__(self):
         return len(self.samples)
@@ -45,36 +68,43 @@ class MLMDataset(Dataset):
                 labels[i] = token_ids[i]
                 prob = random.random()
 
+                # 80% → [MASK]
                 if prob < 0.8:
                     token_ids[i] = self.tokenizer.word2id["[MASK]"]
+
+                # 10% → random token
                 elif prob < 0.9:
                     token_ids[i] = random.randint(
-                        len(self.tokenizer.word2id),
-                        len(self.tokenizer.word2id)
+                        0, len(self.tokenizer.word2id) - 1
                     )
-                # else: unchanged
+
+                # 10% → unchanged
 
         return token_ids, labels
     
     def __getitem__(self, idx):
         tokens = self.samples[idx]
 
-        ids = [self.tokenizer.word2id["[CLS]"]]
-        ids += [self.tokenizer.word2id.get(t, self.tokenizer.word2id["[UNK]"]) for t in tokens]
-        ids.append(self.tokenizer.word2id["[SEP]"])
+        input_ids = [self.tokenizer.word2id["[CLS]"]]
+        input_ids += [
+            self.tokenizer.word2id.get(t, self.tokenizer.word2id["[UNK]"])
+            for t in tokens
+        ]
+        input_ids.append(self.tokenizer.word2id["[SEP]"])
 
-        ids, labels = self._mask_tokens(ids)
+        input_ids, labels = self._mask_tokens(input_ids)
 
-        attention_mask = [1] * len(ids)
+        attention_mask = [1] * len(input_ids)
 
-        if len(ids) < self.max_len:
-            pad_len = self.max_len - len(ids)
-            ids += [self.tokenizer.word2id["[PAD]"]] * pad_len
+        # padding
+        if len(input_ids) < self.max_len:
+            pad_len = self.max_len - len(input_ids)
+            input_ids += [self.tokenizer.word2id["[PAD]"]] * pad_len
             labels += [-100] * pad_len
             attention_mask += [0] * pad_len
 
         return {
-            "input_ids": torch.tensor(ids, dtype=torch.long),
+            "input_ids": torch.tensor(input_ids, dtype=torch.long),
             "labels": torch.tensor(labels, dtype=torch.long),
-            "attention_mask": torch.tensor(attention_mask, dtype=torch.long)
+            "attention_mask": torch.tensor(attention_mask, dtype=torch.long),
         }
