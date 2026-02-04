@@ -1,0 +1,103 @@
+import torch.nn as nn
+import torch
+
+
+class MultiHeadSelfAttention(nn.Module):
+    def __init__(self, hidden_size, num_heads):
+        super().__init__()
+        assert hidden_size % num_heads == 0
+
+        self.num_heads = num_heads
+        self.head_dim = hidden_size // num_heads
+
+        self.qkv = nn.Linear(hidden_size, hidden_size * 3)
+        self.out = nn.Linear(hidden_size, hidden_size)
+        self.dropout = nn.Dropout(0.1)
+
+    def forward(self, x, mask=None):
+        B, T, C = x.size()
+
+        qkv = self.qkv(x)
+        qkv = qkv.reshape(B, T, 3, self.num_heads, self.head_dim)
+        q, k, v = qkv.unbind(dim=2)
+
+        scores = (q @ k.transpose(-2, -1)) / (self.head_dim ** 0.5)
+
+        if mask is not None:
+            scores = scores.masked_fill(mask == 0, -1e9)
+
+        attn = scores.softmax(dim=-1)
+        attn = self.dropout(attn)
+
+        out = attn @ v
+        out = out.transpose(1, 2).reshape(B, T, C)
+
+        return self.out(out)
+    
+
+class EncoderLayer(nn.Module):
+    def __init__(self, hidden_size, num_heads, ffn_hidden):
+        super().__init__()
+
+        self.attn = MultiHeadSelfAttention(hidden_size, num_heads)
+        self.norm1 = nn.LayerNorm(hidden_size)
+
+        self.ffn = nn.Sequential(
+            nn.Linear(hidden_size, ffn_hidden),
+            nn.GELU(),
+            nn.Linear(ffn_hidden, hidden_size)
+        )
+        self.norm2 = nn.LayerNorm(hidden_size)
+        self.dropout = nn.Dropout(0.1)
+
+    def forward(self, x, mask=None):
+        x = x + self.dropout(self.attn(self.norm1(x), mask))
+        x = x + self.dropout(self.ffn(self.norm2(x)))
+        return x
+    
+class BertEmbeddings(nn.Module):
+    def __init__(self, vocab_size, hidden_size, max_len):
+        super().__init__()
+
+        self.token_embeddings = nn.Embedding(vocab_size, hidden_size)
+        self.position_embeddings = nn.Embedding(max_len, hidden_size)
+
+        self.layer_norm = nn.LayerNorm(hidden_size)
+        self.dropout = nn.Dropout(0.1)
+
+    def forward(self, input_ids):
+        seq_len = input_ids.size(1)
+        positions = torch.arange(seq_len, device=input_ids.device)
+        positions = positions.unsqueeze(0)
+
+        token_emb = self.token_embeddings(input_ids)
+        pos_emb = self.position_embeddings(positions)
+
+        embeddings = token_emb + pos_emb
+        embeddings = self.layer_norm(embeddings)
+        return self.dropout(embeddings)
+    
+    
+class MiniBERT(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+
+        self.embeddings = BertEmbeddings(
+            config.vocab_size,
+            config.hidden_size,
+            config.max_len
+        )
+
+        self.layers = nn.ModuleList([
+            EncoderLayer(
+                config.hidden_size,
+                config.num_heads,
+                config.ffn_hidden
+            ) for _ in range(config.num_layers)
+        ])
+
+    def forward(self, input_ids, mask=None):
+        x = self.embeddings(input_ids)
+        for layer in self.layers:
+            x = layer(x, mask)
+        return x
