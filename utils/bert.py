@@ -1,38 +1,45 @@
 import torch.nn as nn
 import torch
-
+import math
 
 class MultiHeadSelfAttention(nn.Module):
-    def __init__(self, hidden_size, num_heads):
+    def __init__(self, hidden_size, num_heads, dropout=0.1):
         super().__init__()
+
         assert hidden_size % num_heads == 0
 
+        self.hidden_size = hidden_size
         self.num_heads = num_heads
         self.head_dim = hidden_size // num_heads
 
-        self.qkv = nn.Linear(hidden_size, hidden_size * 3)
-        self.out = nn.Linear(hidden_size, hidden_size)
-        self.dropout = nn.Dropout(0.1)
+        # ✅ THESE WERE MISSING
+        self.q_proj = nn.Linear(hidden_size, hidden_size)
+        self.k_proj = nn.Linear(hidden_size, hidden_size)
+        self.v_proj = nn.Linear(hidden_size, hidden_size)
+
+        self.out_proj = nn.Linear(hidden_size, hidden_size)
+        self.dropout = nn.Dropout(dropout)
 
     def forward(self, x, mask=None):
         B, T, C = x.size()
 
-        qkv = self.qkv(x)
-        qkv = qkv.reshape(B, T, 3, self.num_heads, self.head_dim)
-        q, k, v = qkv.unbind(dim=2)
+        q = self.q_proj(x).view(B, T, self.num_heads, self.head_dim).transpose(1, 2)
+        k = self.k_proj(x).view(B, T, self.num_heads, self.head_dim).transpose(1, 2)
+        v = self.v_proj(x).view(B, T, self.num_heads, self.head_dim).transpose(1, 2)
 
-        scores = (q @ k.transpose(-2, -1)) / (self.head_dim ** 0.5)
+        scores = (q @ k.transpose(-2, -1)) / math.sqrt(self.head_dim)
 
         if mask is not None:
+            mask = mask.unsqueeze(1).unsqueeze(2)  # [B, 1, 1, T]
             scores = scores.masked_fill(mask == 0, -1e9)
 
         attn = scores.softmax(dim=-1)
         attn = self.dropout(attn)
 
         out = attn @ v
-        out = out.transpose(1, 2).reshape(B, T, C)
+        out = out.transpose(1, 2).contiguous().view(B, T, C)
 
-        return self.out(out)
+        return self.out_proj(out)
     
 
 class EncoderLayer(nn.Module):

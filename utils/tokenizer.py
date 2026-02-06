@@ -1,5 +1,3 @@
-import nltk
-# nltk.download()
 import re
 from hazm import Normalizer, WordTokenizer
 from collections import Counter
@@ -15,20 +13,26 @@ SPECIAL_TOKENS = {
     "[MASK]": 4
 }
 
+
 class Tokenizer:
     def __init__(self, vocab_size=30000):
         self.vocab_size = vocab_size
+
+        # 🔴 NEW: global counter for chunk-based vocab
+        self.counter = Counter()
+
         self.word2id = dict(SPECIAL_TOKENS)
         self.id2word = {v: k for k, v in SPECIAL_TOKENS.items()}
 
-    def build_vocab(self, texts):
-        counter = Counter()
-
+    # 🔴 NEW: instead of build_vocab
+    def add_texts(self, texts):
         for text in texts:
             tokens = tokenize(text)
-            counter.update(tokens)
+            self.counter.update(tokens)
 
-        most_common = counter.most_common(
+    # 🔴 NEW: finalize vocab after all data seen
+    def finalize_vocab(self):
+        most_common = self.counter.most_common(
             self.vocab_size - len(self.word2id)
         )
 
