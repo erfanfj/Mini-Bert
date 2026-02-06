@@ -18,19 +18,16 @@ class Tokenizer:
     def __init__(self, vocab_size=30000):
         self.vocab_size = vocab_size
 
-        # 🔴 NEW: global counter for chunk-based vocab
         self.counter = Counter()
 
         self.word2id = dict(SPECIAL_TOKENS)
         self.id2word = {v: k for k, v in SPECIAL_TOKENS.items()}
 
-    # 🔴 NEW: instead of build_vocab
     def add_texts(self, texts):
         for text in texts:
             tokens = tokenize(text)
             self.counter.update(tokens)
 
-    # 🔴 NEW: finalize vocab after all data seen
     def finalize_vocab(self):
         most_common = self.counter.most_common(
             self.vocab_size - len(self.word2id)
@@ -77,18 +74,3 @@ def normalize_text(text: str) -> str:
     text = re.sub(r"\s+", " ", text)
 
     return text.strip()
-
-# ############
-# #   test   #
-# ############
-# texts = [
-#     "BERT برای پردازش زبان طبیعی استفاده می‌شود",
-#     "Deep Learning در NLP خیلی مهم است"
-# ]
-# print(normalize_text(texts[0]))
-# print(tokenize(texts[0]))
-
-# tokenizer = Tokenizer(vocab_size=10000)
-# tokenizer.build_vocab(texts)
-
-# print(tokenizer.encode("Deep Learning در NLP خیلی مهم است"))

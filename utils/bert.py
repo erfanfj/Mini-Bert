@@ -12,7 +12,6 @@ class MultiHeadSelfAttention(nn.Module):
         self.num_heads = num_heads
         self.head_dim = hidden_size // num_heads
 
-        # ✅ THESE WERE MISSING
         self.q_proj = nn.Linear(hidden_size, hidden_size)
         self.k_proj = nn.Linear(hidden_size, hidden_size)
         self.v_proj = nn.Linear(hidden_size, hidden_size)

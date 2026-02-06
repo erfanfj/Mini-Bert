@@ -23,14 +23,7 @@ class MLMDataset(Dataset):
         chunk_size=10000,
         min_tokens=5
     ):
-        """
-        file_paths: لیست مسیر فایل‌های txt
-        tokenizer: tokenizer سفارشی شما
-        max_len: طول ورودی BERT
-        mlm_prob: احتمال mask شدن هر توکن
-        chunk_size: تعداد line در هر chunk
-        min_tokens: حداقل طول یک sample
-        """
+        
         self.tokenizer = tokenizer
         self.max_len = max_len
         self.mlm_prob = mlm_prob
@@ -48,7 +41,6 @@ class MLMDataset(Dataset):
                 for text_chunk in read_in_chunks(f, chunk_size):
                     tokens = tokenize(text_chunk)
 
-                    # تبدیل به sequenceهای با طول ثابت
                     for i in range(0, len(tokens), self.max_len - 2):
                         chunk = tokens[i:i + self.max_len - 2]
 
@@ -62,23 +54,19 @@ class MLMDataset(Dataset):
     
     def _mask_tokens(self, token_ids):
         labels = [-100] * len(token_ids)
-
-        for i in range(1, len(token_ids) - 1):  # CLS و SEP دست نخورند
+        for i in range(1, len(token_ids) - 1):  
             if random.random() < self.mlm_prob:
                 labels[i] = token_ids[i]
                 prob = random.random()
 
-                # 80% → [MASK]
                 if prob < 0.8:
                     token_ids[i] = self.tokenizer.word2id["[MASK]"]
 
-                # 10% → random token
                 elif prob < 0.9:
                     token_ids[i] = random.randint(
                         0, len(self.tokenizer.word2id) - 1
                     )
 
-                # 10% → unchanged
 
         return token_ids, labels
     
@@ -96,7 +84,6 @@ class MLMDataset(Dataset):
 
         attention_mask = [1] * len(input_ids)
 
-        # padding
         if len(input_ids) < self.max_len:
             pad_len = self.max_len - len(input_ids)
             input_ids += [self.tokenizer.word2id["[PAD]"]] * pad_len
